@@ -1,9 +1,9 @@
 from . import (
-    detection,
-    recognition,
+    # detection,
+    # recognition,
     tools,
     data_generation,
-    pipeline,
+    # pipeline,
     evaluation,
     datasets,
     config,

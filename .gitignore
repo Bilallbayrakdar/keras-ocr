@@ -8,3 +8,6 @@ dist
 __pycache__
 versioneer.pyc
 .vscode
+boat_downloader/
+boat_downloader/images/
+boat_downloader/datasets/

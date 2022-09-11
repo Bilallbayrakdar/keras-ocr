@@ -28,11 +28,14 @@ import tensorflow as tf
 import efficientnet.tfkeras as efficientnet
 from tensorflow import keras
 
-from . import tools
+from keras_ocr import tools
+from torchvision import transforms
+from pprint import pprint
 
 
 def compute_input(image):
     # should be RGB order
+
     image = image.astype("float32")
     mean = np.array([0.485, 0.456, 0.406])
     variance = np.array([0.229, 0.224, 0.225])
@@ -212,10 +215,13 @@ def getBoxes(
     size_threshold=10,
 ):
     box_groups = []
-    for y_pred_cur in y_pred:
+    for y_pred_cur in y_pred[0]:
         # Prepare data
-        textmap = y_pred_cur[..., 0].copy()
-        linkmap = y_pred_cur[..., 1].copy()
+        # textmap = y_pred_cur[..., 0].copy()
+        # linkmap = y_pred_cur[..., 1].copy()
+        textmap = y_pred_cur[..., 0].clone().cpu().detach().numpy()
+        linkmap = y_pred_cur[..., 1].clone().cpu().detach().numpy()
+        
         img_h, img_w = textmap.shape
 
         _, text_score = cv2.threshold(
@@ -489,13 +495,13 @@ def build_torch_model(weights_path=None):
                 m.bias.data.zero_()
 
     class vgg16_bn(torch.nn.Module):
-        def __init__(self, pretrained=True, freeze=True):
+        def __init__(self, weights=True, freeze=True):
             super().__init__()
             # We don't bother loading the pretrained VGG
             # because we're going to use the weights
             # at weights_path.
             vgg_pretrained_features = torchvision.models.vgg16_bn(
-                pretrained=False
+                weights=False
             ).features
             self.slice1 = torch.nn.Sequential()
             self.slice2 = torch.nn.Sequential()
@@ -518,7 +524,7 @@ def build_torch_model(weights_path=None):
                 torch.nn.Conv2d(1024, 1024, kernel_size=1),
             )
 
-            if not pretrained:
+            if not weights:
                 init_weights(self.slice1.modules())
                 init_weights(self.slice2.modules())
                 init_weights(self.slice3.modules())
@@ -564,10 +570,10 @@ def build_torch_model(weights_path=None):
             return x
 
     class CRAFT(torch.nn.Module):
-        def __init__(self, pretrained=False, freeze=False):
+        def __init__(self, weights=False, freeze=False):
             super().__init__()
             # Base network
-            self.basenet = vgg16_bn(pretrained, freeze)
+            self.basenet = vgg16_bn(weights, freeze)
             # U network
             self.upconv1 = double_conv(1024, 512, 256)
             self.upconv2 = double_conv(512, 256, 128)
@@ -636,7 +642,7 @@ def build_torch_model(weights_path=None):
             new_state_dict[name] = v
         return new_state_dict
 
-    model = CRAFT(pretrained=True).eval()
+    model = CRAFT(weights=True).eval()
     if weights_path is not None:
         model.load_state_dict(
             copyStateDict(torch.load(weights_path, map_location=torch.device("cpu")))
@@ -672,7 +678,7 @@ class Detector:
     def __init__(
         self,
         weights="clovaai_general",
-        load_from_torch=False,
+        load_from_torch=True,
         optimizer="adam",
         backbone_name="vgg",
     ):
@@ -690,10 +696,13 @@ class Detector:
             )
         else:
             weights_path = None
-        self.model = build_keras_model(
-            weights_path=weights_path, backbone_name=backbone_name
-        )
-        self.model.compile(loss="mse", optimizer=optimizer)
+        print(f"weights_path: {weights_path}")
+        self.model = build_torch_model(
+            weights_path=weights_path)
+        # self.model = build_keras_model(
+        #     weights_path=weights_path, backbone_name=backbone_name
+        # )
+        # self.model.compile(loss="mse", optimizer=optimizer)
 
     def get_batch_generator(
         self,
@@ -774,9 +783,11 @@ class Detector:
                 Therein lies the balance.
             size_threshold: The minimum area for a word.
         """
-        images = [compute_input(tools.read(image)) for image in images]
+        # image_tensor = convert_tensor(image).unsqueeze(0)
+        # images = [compute_input(tools.read(image)) for image in images]
         boxes = getBoxes(
-            self.model.predict(np.array(images), **kwargs),
+            # self.model.predict(np.array(images), **kwargs),
+            self.model(images),
             detection_threshold=detection_threshold,
             text_threshold=text_threshold,
             link_threshold=link_threshold,
