@@ -11,3 +11,4 @@ versioneer.pyc
 boat_downloader/
 boat_downloader/images/
 boat_downloader/datasets/
+*.zip
